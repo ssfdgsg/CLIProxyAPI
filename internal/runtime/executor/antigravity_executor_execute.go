@@ -110,6 +110,14 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, auth *cliproxyauth.Au
 	baseURL := resolveAntigravityRequestBaseURL(auth)
 	httpClient := newAntigravityHTTPClient(ctx, e.cfg, auth, 0)
 	httpClient = reporter.TrackHTTPClient(httpClient)
+	if projectID, errLifecycle := helps.EnsureAntigravityClientLifecycle(ctx, httpClient, auth, token, baseURL); errLifecycle == nil && projectID != "" {
+		if auth != nil {
+			if auth.Metadata == nil {
+				auth.Metadata = make(map[string]any)
+			}
+			auth.Metadata["project_id"] = projectID
+		}
+	}
 	// Credential retry rounds are owned by the conductor. Perform one upstream
 	// request per credential so request-retry is not consumed twice.
 	if useCredits {
@@ -234,6 +242,7 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, auth *cliproxyauth.Au
 	}
 	resp = cliproxyexecutor.Response{Payload: converted, Headers: httpResp.Header.Clone()}
 	reporter.EnsurePublished(ctx)
+	helps.MaybeSendAntigravityShadowTelemetry(ctx, httpClient, auth, token)
 	return resp, nil
 }
 
@@ -352,6 +361,14 @@ func (e *AntigravityExecutor) executeClaudeNonStream(ctx context.Context, auth *
 	baseURL := resolveAntigravityRequestBaseURL(auth)
 	httpClient := newAntigravityHTTPClient(ctx, e.cfg, auth, 0)
 	httpClient = reporter.TrackHTTPClient(httpClient)
+	if projectID, errLifecycle := helps.EnsureAntigravityClientLifecycle(ctx, httpClient, auth, token, baseURL); errLifecycle == nil && projectID != "" {
+		if auth != nil {
+			if auth.Metadata == nil {
+				auth.Metadata = make(map[string]any)
+			}
+			auth.Metadata["project_id"] = projectID
+		}
+	}
 
 	// Credential retry rounds are owned by the conductor. Perform one upstream
 	// request per credential so request-retry is not consumed twice.
@@ -572,6 +589,7 @@ func (e *AntigravityExecutor) executeClaudeNonStream(ctx context.Context, auth *
 	}
 	resp = cliproxyexecutor.Response{Payload: converted, Headers: httpResp.Header.Clone()}
 	reporter.EnsurePublished(ctx)
+	helps.MaybeSendAntigravityShadowTelemetry(ctx, httpClient, auth, token)
 
 	return resp, nil
 }

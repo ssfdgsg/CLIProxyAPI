@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,12 +22,14 @@ const (
 	// manifest has not been fetched yet or cannot be reached. Cloud Code rejects
 	// newer models for clients below 2.23.0, so this floor must stay at or above
 	// that version.
-	antigravityFallbackVersion = "2.29.0"
-	antigravityHubPlatform     = "os_type=darwin; arch=arm64"
-	antigravityVersionCacheTTL = 6 * time.Hour
-	antigravityFetchTimeout    = 10 * time.Second
-	AntigravityNodeAPIClientUA = "google-api-nodejs-client/10.3.0"
-	AntigravityGoogAPIClientUA = "gl-node/22.21.1"
+	antigravityFallbackVersion       = "2.29.0"
+	antigravityHubPlatform           = "os_type=darwin; arch=arm64"
+	antigravityVersionCacheTTL       = 6 * time.Hour
+	antigravityFetchTimeout          = 10 * time.Second
+	AntigravityNodeAPIClientUA       = "google-api-nodejs-client/10.3.0"
+	AntigravityGoogAPIClientUA       = "gl-node/22.21.1"
+	AntigravityCLIFallbackVersion    = "1.4.12"
+	AntigravityCLIFallbackChangelist = "1010700967"
 )
 
 var (
@@ -132,6 +136,82 @@ func AntigravityUserAgent() string {
 	return fmt.Sprintf("antigravity/hub/%s (%s)", version, metadata)
 }
 
+var (
+	probedCLIVersion     string
+	probedCLIVersionOnce sync.Once
+)
+
+// ResetProbedCLIVersionForTests resets the probed version cache for unit testing.
+func ResetProbedCLIVersionForTests() {
+	probedCLIVersion = ""
+	probedCLIVersionOnce = sync.Once{}
+}
+
+// ProbeAntigravityCLIVersion probes the host environment for an installed `agy` or `antigravity`
+// binary to detect its version. The result is cached. Falls back to AntigravityCLIFallbackVersion.
+func ProbeAntigravityCLIVersion(ctx context.Context) string {
+	probedCLIVersionOnce.Do(func() {
+		probeCtx := ctx
+		if probeCtx == nil {
+			var cancel context.CancelFunc
+			probeCtx, cancel = context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
+		}
+		for _, bin := range []string{"agy", "antigravity"} {
+			path, errLook := exec.LookPath(bin)
+			if errLook != nil || path == "" {
+				continue
+			}
+			cmd := exec.CommandContext(probeCtx, path, "--version")
+			out, errRun := cmd.Output()
+			if errRun != nil {
+				continue
+			}
+			if parsed := parseVersionString(string(out)); parsed != "" {
+				probedCLIVersion = parsed
+				return
+			}
+		}
+	})
+	if probedCLIVersion != "" {
+		return probedCLIVersion
+	}
+	return AntigravityCLIFallbackVersion
+}
+
+func parseVersionString(s string) string {
+	for _, token := range strings.Fields(s) {
+		trimmed := strings.TrimPrefix(strings.Trim(token, "(),;:\"'"), "v")
+		if isValidAntigravitySemVersion(trimmed) {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+// AntigravityCLIUserAgent returns the authentic User-Agent string used by the Antigravity CLI (agy).
+// Format: antigravity/cli/<version> (aidev_client; os_type=<os>; arch=<arch>; cl=<changelist>; auth_method=consumer)
+func AntigravityCLIUserAgent() string {
+	return AntigravityCLIUserAgentWithVersion("", "")
+}
+
+// AntigravityCLIUserAgentWithVersion returns an authentic User-Agent string using the specified
+// version and changelist build number. When empty, fallbacks are used.
+func AntigravityCLIUserAgentWithVersion(version, changelist string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		version = AntigravityCLIFallbackVersion
+	}
+	changelist = strings.TrimSpace(changelist)
+	if changelist == "" {
+		changelist = AntigravityCLIFallbackChangelist
+	}
+	osType := runtime.GOOS
+	arch := runtime.GOARCH
+	metadata := fmt.Sprintf("aidev_client; os_type=%s; arch=%s; cl=%s; auth_method=consumer", osType, arch, changelist)
+	return fmt.Sprintf("antigravity/cli/%s (%s)", version, metadata)
+}
+
 func isAntigravityFamilyUserAgent(lower string) bool {
 	return strings.HasPrefix(lower, "antigravity/hub/") || strings.HasPrefix(lower, "antigravity/")
 }
@@ -187,23 +267,34 @@ func AntigravityOnboardUserUserAgent(userAgent string) string {
 func AntigravityVersionFromUserAgent(userAgent string) string {
 	base := antigravityBaseUserAgent(userAgent)
 	lower := strings.ToLower(base)
-	if strings.HasPrefix(lower, "antigravity/hub/") {
-		rest := base[len("antigravity/hub/"):]
-		if idx := strings.IndexAny(rest, " 	"); idx >= 0 {
+	if strings.HasPrefix(lower, "antigravity/cli/") {
+		rest := base[len("antigravity/cli/"):]
+		if idx := strings.IndexAny(rest, " \t("); idx >= 0 {
 			rest = rest[:idx]
 		}
 		rest = strings.TrimSpace(rest)
-		if rest == "" {
-			return AntigravityLatestVersion()
+		if rest != "" {
+			return rest
 		}
-		return rest
+		return AntigravityCLIFallbackVersion
+	}
+	if strings.HasPrefix(lower, "antigravity/hub/") {
+		rest := base[len("antigravity/hub/"):]
+		if idx := strings.IndexAny(rest, " \t("); idx >= 0 {
+			rest = rest[:idx]
+		}
+		rest = strings.TrimSpace(rest)
+		if rest != "" {
+			return rest
+		}
+		return AntigravityLatestVersion()
 	}
 	const legacyPrefix = "antigravity/"
 	if !strings.HasPrefix(lower, legacyPrefix) {
 		return AntigravityLatestVersion()
 	}
 	rest := base[len(legacyPrefix):]
-	if idx := strings.IndexAny(rest, " 	"); idx >= 0 {
+	if idx := strings.IndexAny(rest, " \t"); idx >= 0 {
 		rest = rest[:idx]
 	}
 	rest = strings.TrimSpace(rest)

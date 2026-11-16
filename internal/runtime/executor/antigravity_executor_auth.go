@@ -241,7 +241,11 @@ func (e *AntigravityExecutor) fetchAntigravityProjectID(ctx context.Context, aut
 	defer cancelAcquisition()
 	httpClient := newAntigravityHTTPClient(acquisitionCtx, e.cfg, auth, 0)
 	tracedClient := helps.WithAntigravityHTTPClientTrace(httpClient, auth, "project_discovery")
-	projectID, errFetch := sdkAuth.FetchAntigravityProjectID(acquisitionCtx, token, tracedClient)
+	baseURL := resolveAntigravityRequestBaseURL(auth)
+	projectID, errFetch := helps.EnsureAntigravityClientLifecycle(acquisitionCtx, tracedClient, auth, token, baseURL)
+	if errFetch != nil || projectID == "" {
+		projectID, errFetch = sdkAuth.FetchAntigravityProjectID(acquisitionCtx, token, tracedClient)
+	}
 	if errFetch != nil {
 		return "", errFetch
 	}

@@ -267,6 +267,22 @@ type AntigravityConfig struct {
 	// SensitivePatternsReplace defines ordered Go RE2 regex replacement rules for system instructions.
 	SensitivePatternsReplace []SensitivePatternRule `yaml:"sensitive-patterns-replace,omitempty" json:"sensitive-patterns-replace,omitempty"`
 
+	// ClientMode controls the client emulation mode: "cli" for official agy CLI emulation, or "hub" for Desktop Hub emulation.
+	// When unset or set to "cli", requests emulate the official agy CLI with "antigravity/cli" UA and consumer auth markers.
+	ClientMode string `yaml:"client-mode,omitempty" json:"client-mode,omitempty"`
+
+	// UserAgent optionally overrides the User-Agent string completely for all Antigravity requests.
+	UserAgent string `yaml:"user-agent,omitempty" json:"user-agent,omitempty"`
+
+	// Version optionally overrides the client version reported to upstream (e.g. "1.4.13").
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	// Changelist optionally overrides the CL build number reported to upstream (e.g. "1010700967").
+	Changelist string `yaml:"changelist,omitempty" json:"changelist,omitempty"`
+
+	// UTLS controls uTLS ClientHello fingerprint spoofing for Antigravity requests.
+	UTLS AntigravityUTLSConfig `yaml:"utls,omitempty" json:"utls,omitempty"`
+
 	// ConnectionPool configures upstream HTTP connection pooling behavior for Antigravity.
 	ConnectionPool AntigravityConnectionPoolConfig `yaml:"connection-pool,omitempty" json:"connection-pool,omitempty"`
 
@@ -276,6 +292,40 @@ type AntigravityConfig struct {
 	// is explicitly configured. Set to "0", "off", "false", "none", or
 	// "disabled" to explicitly disable the pause.
 	TOSPauseWindow string `yaml:"tos-pause-window,omitempty" json:"tos-pause-window,omitempty"`
+}
+
+// AntigravityUTLSConfig controls uTLS ClientHello fingerprint spoofing for Antigravity requests.
+type AntigravityUTLSConfig struct {
+	// Enabled controls whether uTLS fingerprint spoofing is enabled.
+	// When nil or true (under client-mode: cli), uTLS is enabled. Set to false to disable.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+
+	// Profile specifies the TLS ClientHello fingerprint profile to emulate.
+	// Supported values: "agy" (default, matching official agy CLI TLS 1.3 fingerprint), "chrome".
+	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
+}
+
+// UTLSEnabled returns true if uTLS fingerprint spoofing is enabled for Antigravity.
+func (c *AntigravityConfig) UTLSEnabled() bool {
+	if c == nil {
+		return false
+	}
+	if c.UTLS.Enabled != nil {
+		return *c.UTLS.Enabled
+	}
+	// Under official agy CLI mode or when a profile is specified, default to true.
+	if strings.EqualFold(c.ClientMode, "cli") || strings.TrimSpace(c.UTLS.Profile) != "" {
+		return true
+	}
+	return false
+}
+
+// UTLSProfile returns the normalized uTLS profile name, defaulting to "agy".
+func (c *AntigravityConfig) UTLSProfile() string {
+	if c == nil || strings.TrimSpace(c.UTLS.Profile) == "" {
+		return "agy"
+	}
+	return strings.ToLower(strings.TrimSpace(c.UTLS.Profile))
 }
 
 // AntigravityConnectionPoolConfig controls upstream HTTP/1.1 connection pooling behavior for Antigravity.

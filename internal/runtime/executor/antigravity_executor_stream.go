@@ -110,6 +110,14 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 	baseURL := resolveAntigravityRequestBaseURL(auth)
 	httpClient := newAntigravityHTTPClient(ctx, e.cfg, auth, 0)
 	httpClient = reporter.TrackHTTPClient(httpClient)
+	if projectID, errLifecycle := helps.EnsureAntigravityClientLifecycle(ctx, httpClient, auth, token, baseURL); errLifecycle == nil && projectID != "" {
+		if auth != nil {
+			if auth.Metadata == nil {
+				auth.Metadata = make(map[string]any)
+			}
+			auth.Metadata["project_id"] = projectID
+		}
+	}
 
 	// Credential retry rounds are owned by the conductor. Perform one upstream
 	// request per credential so request-retry is not consumed twice.
@@ -272,6 +280,7 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 
 			streamUsage.Publish(ctx, reporter)
 			reporter.EnsurePublished(ctx)
+			helps.MaybeSendAntigravityShadowTelemetry(ctx, httpClient, auth, token)
 		}()
 		var pendingFilterPayload []byte
 		var pendingFilterMsg string

@@ -1239,6 +1239,13 @@ oauth:
 
     # Antigravity provider behavior.
     antigravity:
+      # client-mode: "cli"             # optional: client emulation mode ("cli" for authentic agy CLI emulation, "hub" for Desktop Hub)
+      # user-agent: ""                 # optional: explicit User-Agent override for all Antigravity requests
+      # version: "1.4.12"              # optional: explicit client version override (e.g. "1.4.13")
+      # changelist: "1010700967"       # optional: explicit CL build number override
+      # utls:                          # optional: uTLS ClientHello fingerprint spoofing (bypasses Go standard TLS fingerprint)
+      #   enabled: true                # whether uTLS is enabled (defaults to true under client-mode: "cli")
+      #   profile: "agy"               # fingerprint profile: "agy" (default, matching official agy CLI), "chrome"
       # sensitive-words:              # optional: words to obfuscate with combining grapheme joiners (U+034F) in system instructions
       #   - "API"
       #   - "proxy"

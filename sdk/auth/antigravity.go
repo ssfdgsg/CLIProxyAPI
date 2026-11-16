@@ -271,6 +271,16 @@ func AntigravityUserAgent() string {
 	return misc.AntigravityUserAgent()
 }
 
+// AntigravityCLIUserAgent returns the authentic User-Agent string used by the Antigravity CLI (agy).
+func AntigravityCLIUserAgent() string {
+	return misc.AntigravityCLIUserAgent()
+}
+
+// AntigravityCLIUserAgentWithVersion returns an authentic User-Agent using the specified version and changelist.
+func AntigravityCLIUserAgentWithVersion(version, changelist string) string {
+	return misc.AntigravityCLIUserAgentWithVersion(version, changelist)
+}
+
 // StartAntigravityVersionUpdater starts background refresh for the Antigravity Hub version.
 // Pass a process-lifetime ctx; it runs only once and is not auto-started by SDK packages.
 func StartAntigravityVersionUpdater(ctx context.Context) {
@@ -330,6 +340,8 @@ func BuildAntigravityAuth(tokenResp *AntigravityTokenResponse, email, projectID 
 		"expires_in":    tokenResp.ExpiresIn,
 		"timestamp":     now.UnixMilli(),
 		"expired":       now.Add(time.Duration(tokenResp.ExpiresIn) * time.Second).Format(time.RFC3339),
+		"user_agent":    misc.AntigravityCLIUserAgent(),
+		"client_mode":   "cli",
 	}
 	email = strings.TrimSpace(email)
 	if email != "" {
