@@ -32,20 +32,23 @@ import (
 )
 
 const (
-	antigravityBaseURLDaily                = "https://daily-cloudcode-pa.googleapis.com"
-	antigravitySandboxBaseURLDaily         = "https://daily-cloudcode-pa.sandbox.googleapis.com"
-	antigravityBaseURLProd                 = "https://cloudcode-pa.googleapis.com"
-	antigravityCountTokensPath             = "/v1internal:countTokens"
-	antigravityStreamPath                  = "/v1internal:streamGenerateContent"
-	antigravityGeneratePath                = "/v1internal:generateContent"
-	antigravityClientID                    = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-	antigravityClientSecret                = "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"
-	antigravityAuthType                    = "antigravity"
-	antigravityRequestTokenSafetyWindow    = 5 * time.Minute
-	antigravityCreditsHintRefreshInterval  = cliproxyauth.AntigravityCreditsHintRefreshInterval
-	antigravityCreditsHintRefreshTimeout   = 5 * time.Second
-	antigravityShortQuotaCooldownThreshold = 5 * time.Minute
-	antigravityInstantRetryThreshold       = 3 * time.Second
+	antigravityBaseURLDaily               = "https://daily-cloudcode-pa.googleapis.com"
+	antigravitySandboxBaseURLDaily        = "https://daily-cloudcode-pa.sandbox.googleapis.com"
+	antigravityBaseURLProd                = "https://cloudcode-pa.googleapis.com"
+	antigravityCountTokensPath            = "/v1internal:countTokens"
+	antigravityStreamPath                 = "/v1internal:streamGenerateContent"
+	antigravityGeneratePath               = "/v1internal:generateContent"
+	antigravityClientID                   = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+	antigravityAuthType                   = "antigravity"
+	antigravityRequestTokenSafetyWindow   = 5 * time.Minute
+	antigravityCreditsHintRefreshInterval = cliproxyauth.AntigravityCreditsHintRefreshInterval
+	antigravityCreditsHintRefreshTimeout  = 5 * time.Second
+	// 429 handling: longer cooldowns and a shorter instant-retry window keep
+	// CPA from repeatedly hitting aicode.googleapis.com when Google signals
+	// quota/rate-limit pressure. Aggressive account switching was a leading
+	// cause of soft bans reported against the pre-fix defaults.
+	antigravityShortQuotaCooldownThreshold = 15 * time.Minute
+	antigravityInstantRetryThreshold       = 1 * time.Second
 	// systemInstruction              = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**"
 )
 

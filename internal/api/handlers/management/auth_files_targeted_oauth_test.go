@@ -34,11 +34,11 @@ type targetedTestAntigravityOAuthService struct {
 	accessToken string
 }
 
-func (s *targetedTestAntigravityOAuthService) BuildAuthURL(state, _ string) string {
+func (s *targetedTestAntigravityOAuthService) BuildAuthURL(state, _ string, _ *antigravity.PKCECodes) string {
 	return "https://accounts.google.com/o/oauth2/v2/auth?state=" + state
 }
 
-func (s *targetedTestAntigravityOAuthService) ExchangeCodeForTokens(_ context.Context, code, _ string) (*antigravity.TokenResponse, error) {
+func (s *targetedTestAntigravityOAuthService) ExchangeCodeForTokens(_ context.Context, code, _ string, _ *antigravity.PKCECodes) (*antigravity.TokenResponse, error) {
 	tok := s.accessToken
 	if tok == "" {
 		tok = "ag-fresh-access-" + code

@@ -16,7 +16,11 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestBuildAuthURLIncludesAICodeScope(t *testing.T) {
-	parsedURL, err := url.Parse(NewAntigravityAuth(nil, nil).BuildAuthURL("state", "http://localhost/callback"))
+	pkce, errPKCE := GeneratePKCECodes()
+	if errPKCE != nil {
+		t.Fatalf("GeneratePKCECodes: %v", errPKCE)
+	}
+	parsedURL, err := url.Parse(NewAntigravityAuth(nil, nil).BuildAuthURL("state", "http://localhost/callback", pkce))
 	if err != nil {
 		t.Fatalf("parse auth URL: %v", err)
 	}

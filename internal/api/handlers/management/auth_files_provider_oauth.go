@@ -39,8 +39,8 @@ type codexOAuthService interface {
 }
 
 type antigravityOAuthService interface {
-	BuildAuthURL(state, redirectURI string) string
-	ExchangeCodeForTokens(ctx context.Context, code, redirectURI string) (*antigravity.TokenResponse, error)
+	BuildAuthURL(state, redirectURI string, pkceCodes *antigravity.PKCECodes) string
+	ExchangeCodeForTokens(ctx context.Context, code, redirectURI string, pkceCodes *antigravity.PKCECodes) (*antigravity.TokenResponse, error)
 	FetchUserInfo(ctx context.Context, accessToken string) (string, error)
 	FetchProjectID(ctx context.Context, accessToken string) (string, error)
 }
@@ -745,7 +745,13 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 	}
 
 	redirectURI := fmt.Sprintf("http://localhost:%d/oauth-callback", antigravity.CallbackPort)
-	authURL := authSvc.BuildAuthURL(state, redirectURI)
+	pkceCodes, errPKCE := antigravity.GeneratePKCECodes()
+	if errPKCE != nil {
+		log.Errorf("Failed to generate antigravity PKCE codes: %v", errPKCE)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate PKCE codes"})
+		return
+	}
+	authURL := authSvc.BuildAuthURL(state, redirectURI, pkceCodes)
 
 	RegisterOAuthSessionWithProxy(state, "antigravity", sessionProxyURL)
 	respPayload := gin.H{"status": "ok", "url": authURL, "state": state}
@@ -810,7 +816,7 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		tokenResp, errToken := authSvc.ExchangeCodeForTokens(ctx, authCode, redirectURI)
+		tokenResp, errToken := authSvc.ExchangeCodeForTokens(ctx, authCode, redirectURI, pkceCodes)
 		if errToken != nil {
 			log.Errorf("Failed to exchange token: %s", redactSessionProxyInString(errToken.Error(), sessionProxyURL))
 			SetOAuthSessionError(state, "Failed to exchange token")

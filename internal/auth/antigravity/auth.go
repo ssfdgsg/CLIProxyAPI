@@ -138,8 +138,11 @@ func defaultAntigravityTierID(loadResp map[string]any) string {
 	return "free-tier"
 }
 
-// BuildAuthURL generates the OAuth authorization URL.
-func (o *AntigravityAuth) BuildAuthURL(state, redirectURI string) string {
+// BuildAuthURL generates the OAuth authorization URL. pkceCodes must be the
+// same pair handed to ExchangeCodeForTokens; a nil value falls back to a
+// non-PKCE URL only to keep legacy callers working, which is rarely what you
+// want for new code.
+func (o *AntigravityAuth) BuildAuthURL(state, redirectURI string, pkceCodes *PKCECodes) string {
 	if strings.TrimSpace(redirectURI) == "" {
 		redirectURI = fmt.Sprintf("http://localhost:%d/oauth-callback", CallbackPort)
 	}
@@ -151,17 +154,24 @@ func (o *AntigravityAuth) BuildAuthURL(state, redirectURI string) string {
 	params.Set("response_type", "code")
 	params.Set("scope", strings.Join(Scopes, " "))
 	params.Set("state", state)
+	if pkceCodes != nil {
+		params.Set("code_challenge", pkceCodes.CodeChallenge)
+		params.Set("code_challenge_method", "S256")
+	}
 	return AuthEndpoint + "?" + params.Encode()
 }
 
 // ExchangeCodeForTokens exchanges authorization code for access and refresh tokens
-func (o *AntigravityAuth) ExchangeCodeForTokens(ctx context.Context, code, redirectURI string) (*TokenResponse, error) {
+func (o *AntigravityAuth) ExchangeCodeForTokens(ctx context.Context, code, redirectURI string, pkceCodes *PKCECodes) (*TokenResponse, error) {
+	if pkceCodes == nil {
+		return nil, fmt.Errorf("PKCE codes are required for token exchange")
+	}
 	data := url.Values{}
 	data.Set("code", code)
 	data.Set("client_id", ClientID)
-	data.Set("client_secret", ClientSecret)
 	data.Set("redirect_uri", redirectURI)
 	data.Set("grant_type", "authorization_code")
+	data.Set("code_verifier", pkceCodes.CodeVerifier)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, TokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {

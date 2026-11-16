@@ -1633,7 +1633,9 @@ func TestHostApplyConfigWaitsForBlockedQuiesceBeforeCanceledRollbackAndReplay(t 
 			events.add("old.quiesce.finish")
 			return marshalRPCResult(rpcEmptyResponse{})
 		case pluginabi.MethodPluginReconfigure:
-			var reconfigureOnce sync.Once
+			// reconfigureOnce is reserved for future single-flight reconfigure
+			// coordination; take a pointer so vet's noCopy check stays happy.
+			reconfigureOnce := &sync.Once{}
 			_ = reconfigureOnce
 			select {
 			case <-reconfigureStarted:

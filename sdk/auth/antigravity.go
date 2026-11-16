@@ -66,7 +66,11 @@ func (AntigravityAuthenticator) Login(ctx context.Context, cfg *config.Config, o
 	}()
 
 	redirectURI := fmt.Sprintf("http://localhost:%d/oauth-callback", port)
-	authURL := authSvc.BuildAuthURL(state, redirectURI)
+	pkceCodes, errPKCE := antigravity.GeneratePKCECodes()
+	if errPKCE != nil {
+		return nil, fmt.Errorf("antigravity: failed to generate PKCE codes: %w", errPKCE)
+	}
+	authURL := authSvc.BuildAuthURL(state, redirectURI, pkceCodes)
 
 	if !opts.NoBrowser {
 		fmt.Println("Opening browser for antigravity authentication")
@@ -153,7 +157,7 @@ waitForCallback:
 		return nil, fmt.Errorf("antigravity: missing authorization code")
 	}
 
-	tokenResp, errToken := authSvc.ExchangeCodeForTokens(ctx, cbRes.Code, redirectURI)
+	tokenResp, errToken := authSvc.ExchangeCodeForTokens(ctx, cbRes.Code, redirectURI, pkceCodes)
 	if errToken != nil {
 		return nil, fmt.Errorf("antigravity: token exchange failed: %w", errToken)
 	}
@@ -284,19 +288,23 @@ func AntigravityRequestUserAgent(userAgent string) string {
 }
 
 // BuildAntigravityAuthURL generates the OAuth authorization URL for Antigravity.
-// If redirectURI is empty, the default loopback callback URI is used.
-func BuildAntigravityAuthURL(state, redirectURI string) string {
+// If redirectURI is empty, the default loopback callback URI is used. pkceCodes
+// must match what will be passed to ExchangeAntigravityCode; callers may use a
+// nil pkceCodes only for legacy non-PKCE flows.
+func BuildAntigravityAuthURL(state, redirectURI string, pkceCodes *antigravity.PKCECodes) string {
 	authSvc := antigravity.NewAntigravityAuth(nil, nil)
-	return authSvc.BuildAuthURL(state, redirectURI)
+	return authSvc.BuildAuthURL(state, redirectURI, pkceCodes)
 }
 
 // ExchangeAntigravityCode exchanges an authorization code for access and refresh tokens.
-func ExchangeAntigravityCode(ctx context.Context, code, redirectURI string, httpClient *http.Client) (*AntigravityTokenResponse, error) {
+// pkceCodes must be the same pair used to build the authorization URL (CPA's
+// new flow requires PKCE, mirroring the official agy client).
+func ExchangeAntigravityCode(ctx context.Context, code, redirectURI string, httpClient *http.Client, pkceCodes *antigravity.PKCECodes) (*AntigravityTokenResponse, error) {
 	if strings.TrimSpace(redirectURI) == "" {
 		redirectURI = AntigravityDefaultCallbackURI()
 	}
 	authSvc := antigravity.NewAntigravityAuth(nil, httpClient)
-	tokenResp, errExchange := authSvc.ExchangeCodeForTokens(ctx, code, redirectURI)
+	tokenResp, errExchange := authSvc.ExchangeCodeForTokens(ctx, code, redirectURI, pkceCodes)
 	if errExchange != nil {
 		return nil, errExchange
 	}
@@ -357,8 +365,8 @@ func BuildAntigravityAuth(tokenResp *AntigravityTokenResponse, email, projectID 
 
 // CompleteAntigravityOAuth performs code exchange, user identity retrieval, and GCP project discovery
 // using an injected HTTP client, returning an assembled *coreauth.Auth without touching the filesystem.
-func CompleteAntigravityOAuth(ctx context.Context, code, redirectURI string, httpClient *http.Client) (*coreauth.Auth, error) {
-	tokenResp, errExchange := ExchangeAntigravityCode(ctx, code, redirectURI, httpClient)
+func CompleteAntigravityOAuth(ctx context.Context, code, redirectURI string, httpClient *http.Client, pkceCodes *antigravity.PKCECodes) (*coreauth.Auth, error) {
+	tokenResp, errExchange := ExchangeAntigravityCode(ctx, code, redirectURI, httpClient, pkceCodes)
 	if errExchange != nil {
 		return nil, fmt.Errorf("antigravity: token exchange failed: %w", errExchange)
 	}
