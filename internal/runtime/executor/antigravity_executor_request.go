@@ -606,11 +606,20 @@ func resolveHost(base string) string {
 }
 
 func resolveUserAgent(auth *cliproxyauth.Auth) string {
-	return misc.AntigravityRequestUserAgent(antigravityConfiguredUserAgent(auth))
+	ua := antigravityConfiguredUserAgent(auth)
+	if ua == "" {
+		if auth != nil && auth.Metadata != nil {
+			if mode, ok := auth.Metadata["client_mode"].(string); ok && strings.EqualFold(mode, "hub") {
+				return misc.AntigravityRequestUserAgent("")
+			}
+		}
+		ua = misc.AntigravityCLIUserAgent()
+	}
+	return misc.AntigravityRequestUserAgent(ua)
 }
 
 func resolveLoadCodeAssistUserAgent(auth *cliproxyauth.Auth) string {
-	return misc.AntigravityLoadCodeAssistUserAgent(antigravityConfiguredUserAgent(auth))
+	return resolveUserAgent(auth)
 }
 
 func antigravityConfiguredUserAgent(auth *cliproxyauth.Auth) string {

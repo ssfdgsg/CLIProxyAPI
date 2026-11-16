@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -35,7 +37,8 @@ func TestFetchProjectIDFromLoadCodeAssist(t *testing.T) {
 
 func TestFetchProjectIDFallsBackToDailyOnboardUser(t *testing.T) {
 	var sawOnboard bool
-	auth := NewAntigravityAuth(nil, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+	hubCfg := &config.Config{Antigravity: config.AntigravityConfig{ClientMode: "hub"}}
+	auth := NewAntigravityAuth(hubCfg, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.String() {
 		case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 			assertLoadCodeAssistHeaders(t, req)
@@ -95,6 +98,29 @@ func TestFetchProjectIDUpstreamForbiddenReturnsStatus403(t *testing.T) {
 	}
 }
 
+func TestFetchUserInfoUsesGoHTTPClient(t *testing.T) {
+	auth := NewAntigravityAuth(nil, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() != UserInfoEndpoint {
+			t.Fatalf("unexpected request URL: %s", req.URL.String())
+		}
+		if got := req.Header.Get("User-Agent"); got != "Go-http-client/1.1" {
+			t.Fatalf("User-Agent = %q, want %q", got, "Go-http-client/1.1")
+		}
+		if got := req.Header.Get("Authorization"); got != "Bearer access-token" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		return jsonResponse(`{"email":"user@example.com"}`), nil
+	})})
+
+	email, err := auth.FetchUserInfo(context.Background(), "access-token")
+	if err != nil {
+		t.Fatalf("FetchUserInfo error: %v", err)
+	}
+	if email != "user@example.com" {
+		t.Fatalf("email = %q, want user@example.com", email)
+	}
+}
+
 func assertLoadCodeAssistHeaders(t *testing.T, req *http.Request) {
 	t.Helper()
 	if got := req.Header.Get("Authorization"); got != "Bearer access-token" {
@@ -107,7 +133,7 @@ func assertLoadCodeAssistHeaders(t *testing.T, req *http.Request) {
 		t.Fatalf("X-Goog-Api-Client = %q, want empty", got)
 	}
 	userAgent := req.Header.Get("User-Agent")
-	if !strings.HasPrefix(userAgent, "antigravity/hub/") {
+	if !strings.HasPrefix(userAgent, "antigravity/cli/") && !strings.HasPrefix(userAgent, "antigravity/hub/") {
 		t.Fatalf("User-Agent = %q", userAgent)
 	}
 	if strings.Contains(userAgent, "google-api-nodejs-client/") {

@@ -22,7 +22,6 @@ import (
 	antigravityclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/antigravity/claude"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/httptransport"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
@@ -230,6 +229,8 @@ type antigravityTransportKey struct {
 	shortMode           bool
 	idleConnTimeout     time.Duration
 	maxIdleConnsPerHost int
+	utlsEnabled         bool
+	utlsProfile         string
 }
 
 func defaultAntigravityBaseTransport() *http.Transport {
@@ -327,14 +328,26 @@ func antigravityHTTP11Transport(auth *cliproxyauth.Auth, base *http.Transport, c
 		cfg = cfgs[0]
 	}
 	settings := resolveAntigravityPoolSettings(cfg)
+	utlsEnabled := cfg != nil && cfg.Antigravity.UTLSEnabled()
+	utlsProfile := ""
+	if utlsEnabled {
+		utlsProfile = cfg.Antigravity.UTLSProfile()
+	}
 	key := antigravityTransportKey{
 		credential:          antigravityTransportScope(auth),
 		base:                base,
 		shortMode:           settings.shortMode,
 		idleConnTimeout:     settings.idleConnTimeout,
 		maxIdleConnsPerHost: settings.maxIdleConnsPerHost,
+		utlsEnabled:         utlsEnabled,
+		utlsProfile:         utlsProfile,
 	}
 	transport, errGet := antigravityTransports.Get(key, func() (*http.Transport, error) {
+		if utlsEnabled && (base == antigravityBaseTransport || base == http.DefaultTransport) {
+			tr := helps.NewAntigravityUTLSTransport("", utlsProfile, cfg)
+			applyAntigravityPoolLimits(tr, cfgs...)
+			return tr, nil
+		}
 		return cloneTransportWithHTTP11(base, cfgs...), nil
 	})
 	if errGet != nil {
@@ -342,6 +355,11 @@ func antigravityHTTP11Transport(auth *cliproxyauth.Auth, base *http.Transport, c
 		// nil Transport makes http.Client fall back to http.DefaultTransport, which
 		// advertises h2 over ALPN and would break the Antigravity wire fingerprint.
 		log.Debugf("antigravity executor: cache HTTP/1.1 transport failed: %v", errGet)
+		if utlsEnabled && (base == antigravityBaseTransport || base == http.DefaultTransport) {
+			tr := helps.NewAntigravityUTLSTransport("", utlsProfile, cfg)
+			applyAntigravityPoolLimits(tr, cfgs...)
+			return tr
+		}
 		return cloneTransportWithHTTP11(base, cfgs...)
 	}
 	return transport
@@ -361,14 +379,26 @@ func antigravityProxiedHTTP11Transport(auth *cliproxyauth.Auth, proxyURL string,
 		cfg = cfgs[0]
 	}
 	settings := resolveAntigravityPoolSettings(cfg)
+	utlsEnabled := cfg != nil && cfg.Antigravity.UTLSEnabled()
+	utlsProfile := ""
+	if utlsEnabled {
+		utlsProfile = cfg.Antigravity.UTLSProfile()
+	}
 	key := antigravityTransportKey{
 		credential:          antigravityTransportScope(auth),
 		proxy:               proxyURL,
 		shortMode:           settings.shortMode,
 		idleConnTimeout:     settings.idleConnTimeout,
 		maxIdleConnsPerHost: settings.maxIdleConnsPerHost,
+		utlsEnabled:         utlsEnabled,
+		utlsProfile:         utlsProfile,
 	}
 	transport, errGet := antigravityTransports.Get(key, func() (*http.Transport, error) {
+		if utlsEnabled {
+			tr := helps.NewAntigravityUTLSTransport(proxyURL, utlsProfile, cfg)
+			applyAntigravityPoolLimits(tr, cfgs...)
+			return tr, nil
+		}
 		base, _, errBuild := proxyutil.BuildHTTPTransport(proxyURL)
 		if errBuild != nil {
 			return nil, errBuild
@@ -476,18 +506,7 @@ func newAntigravityHTTPClient(ctx context.Context, cfg *config.Config, auth *cli
 }
 
 func antigravityProxyURL(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth) string {
-	if proxyURL := cliproxyexecutor.RequestProxyURL(ctx); proxyURL != "" {
-		return proxyURL
-	}
-	if auth != nil {
-		if proxyURL := strings.TrimSpace(auth.ProxyURL); proxyURL != "" {
-			return proxyURL
-		}
-	}
-	if cfg != nil {
-		return strings.TrimSpace(cfg.ProxyURL)
-	}
-	return ""
+	return helps.EffectiveAntigravityProxyURL(ctx, cfg, auth)
 }
 
 func sanitizeAntigravityGeminiRequestSignatures(modelName string, rawJSON []byte) []byte {

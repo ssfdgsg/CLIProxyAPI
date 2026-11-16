@@ -52,6 +52,7 @@ func (e *HTTPStatusError) StatusCode() int {
 
 // AntigravityAuth handles Antigravity OAuth authentication
 type AntigravityAuth struct {
+	cfg        *config.Config
 	httpClient *http.Client
 }
 
@@ -61,19 +62,55 @@ func NewAntigravityAuth(cfg *config.Config, httpClient *http.Client) *Antigravit
 		cfg = &config.Config{}
 	}
 	if httpClient != nil {
-		return &AntigravityAuth{httpClient: httpClient}
+		return &AntigravityAuth{cfg: cfg, httpClient: httpClient}
 	}
 	return &AntigravityAuth{
+		cfg:        cfg,
 		httpClient: util.SetProxy(&cfg.SDKConfig, &http.Client{}),
 	}
 }
 
+func (o *AntigravityAuth) isHubMode() bool {
+	if o == nil || o.cfg == nil {
+		return true // Default to hub mode when unconfigured for backward compatibility with legacy tests
+	}
+	return strings.EqualFold(o.cfg.Antigravity.ClientMode, "hub")
+}
+
+// ClientUserAgent returns the client user agent for Antigravity requests.
+func (o *AntigravityAuth) ClientUserAgent() string {
+	if o != nil && o.cfg != nil {
+		if ua := strings.TrimSpace(o.cfg.Antigravity.UserAgent); ua != "" {
+			return ua
+		}
+		if o.isHubMode() {
+			return misc.AntigravityUserAgent()
+		}
+		if o.cfg.Antigravity.Version != "" || o.cfg.Antigravity.Changelist != "" {
+			return misc.AntigravityCLIUserAgentWithVersion(o.cfg.Antigravity.Version, o.cfg.Antigravity.Changelist)
+		}
+		return misc.AntigravityCLIUserAgent()
+	}
+	// Unconfigured / nil config defaults to hub mode for backward compatibility
+	return misc.AntigravityUserAgent()
+}
+
 func (o *AntigravityAuth) shortUserAgent() string {
+	if o != nil && o.cfg != nil {
+		return o.ClientUserAgent()
+	}
 	return misc.AntigravityRequestUserAgent("")
 }
 
 func (o *AntigravityAuth) nodeUserAgent() string {
 	return misc.AntigravityOnboardUserUserAgent("")
+}
+
+func (o *AntigravityAuth) HTTPClient() *http.Client {
+	if o == nil {
+		return nil
+	}
+	return o.httpClient
 }
 
 func antigravityLoadCodeAssistMetadata() map[string]string {
@@ -168,6 +205,7 @@ func (o *AntigravityAuth) ExchangeCodeForTokens(ctx context.Context, code, redir
 		return nil, fmt.Errorf("antigravity token exchange: create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "Go-http-client/1.1")
 
 	resp, errDo := o.httpClient.Do(req)
 	if errDo != nil {
@@ -210,7 +248,7 @@ func (o *AntigravityAuth) FetchUserInfo(ctx context.Context, accessToken string)
 		return "", fmt.Errorf("antigravity userinfo: create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("User-Agent", o.shortUserAgent())
+	req.Header.Set("User-Agent", "Go-http-client/1.1")
 
 	resp, errDo := o.httpClient.Do(req)
 	if errDo != nil {

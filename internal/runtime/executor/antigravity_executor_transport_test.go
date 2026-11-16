@@ -1051,3 +1051,58 @@ func TestAntigravityTransportKeySeparatesPoolSettingsAcrossReload(t *testing.T) 
 		t.Fatalf("pooled transport MaxIdleConnsPerHost = %d, want %d", trPooled.MaxIdleConnsPerHost, antigravityDefaultMaxIdleConnsPerHost)
 	}
 }
+
+func TestNewAntigravityHTTPClient_UTLSEnabled(t *testing.T) {
+	t.Parallel()
+
+	enabledUTLS := true
+	cfgUTLS := &config.Config{
+		Antigravity: config.AntigravityConfig{
+			ClientMode: "cli",
+			UTLS: config.AntigravityUTLSConfig{
+				Enabled: &enabledUTLS,
+				Profile: "agy",
+			},
+		},
+	}
+
+	auth := antigravityAuthWithIDAndProxy("utls-test-auth", "")
+	client := newAntigravityHTTPClient(context.Background(), cfgUTLS, auth, 0)
+	if client == nil || client.Transport == nil {
+		t.Fatal("expected non-nil client and transport")
+	}
+
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+	if tr.ForceAttemptHTTP2 {
+		t.Fatal("expected ForceAttemptHTTP2 to be false")
+	}
+	if tr.DialTLSContext == nil {
+		t.Fatal("expected DialTLSContext to be set for uTLS transport")
+	}
+}
+
+func TestNewAntigravityHTTPClient_ProxyURLInMetadata(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	auth := &cliproxyauth.Auth{
+		ID:       "meta-proxy-auth",
+		Metadata: map[string]any{"proxy_url": "http://127.0.0.1:19876"},
+	}
+
+	client := newAntigravityHTTPClient(context.Background(), cfg, auth, 0)
+	if client == nil || client.Transport == nil {
+		t.Fatal("expected non-nil client and transport")
+	}
+
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+	if tr.Proxy == nil {
+		t.Fatal("expected transport to have Proxy function configured from metadata proxy_url")
+	}
+}

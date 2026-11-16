@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -170,5 +171,67 @@ func TestFetchAntigravityLatestVersionReturnsHubManifestError(t *testing.T) {
 	_, errFetch := fetchAntigravityLatestVersion(context.Background())
 	if errFetch == nil {
 		t.Fatal("fetchAntigravityLatestVersion() error = nil, want error")
+	}
+}
+
+func TestAntigravityCLIUserAgent(t *testing.T) {
+	ua := AntigravityCLIUserAgent()
+	if !strings.HasPrefix(ua, "antigravity/cli/1.4.12 ") {
+		t.Fatalf("AntigravityCLIUserAgent() = %q, want prefix antigravity/cli/1.4.12", ua)
+	}
+	if !strings.Contains(ua, "auth_method=consumer") {
+		t.Fatalf("AntigravityCLIUserAgent() = %q, want auth_method=consumer", ua)
+	}
+	if !strings.Contains(ua, "cl=1010700967") {
+		t.Fatalf("AntigravityCLIUserAgent() = %q, want cl=1010700967", ua)
+	}
+}
+
+func TestAntigravityVersionFromUserAgentParsesCLIFamily(t *testing.T) {
+	ua := "antigravity/cli/1.4.12 (aidev_client; os_type=darwin; arch=arm64; cl=1010700967; auth_method=consumer)"
+	if got := AntigravityVersionFromUserAgent(ua); got != "1.4.12" {
+		t.Fatalf("AntigravityVersionFromUserAgent(%q) = %q, want %q", ua, got, "1.4.12")
+	}
+}
+
+func TestAntigravityCLIUserAgentWithVersion(t *testing.T) {
+	ua := AntigravityCLIUserAgentWithVersion("1.4.13", "1019999999")
+	if !strings.HasPrefix(ua, "antigravity/cli/1.4.13 ") {
+		t.Fatalf("AntigravityCLIUserAgentWithVersion() = %q, want prefix antigravity/cli/1.4.13", ua)
+	}
+	if !strings.Contains(ua, "cl=1019999999") {
+		t.Fatalf("AntigravityCLIUserAgentWithVersion() = %q, want cl=1019999999", ua)
+	}
+}
+
+func TestParseVersionString(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"1.4.12", "1.4.12"},
+		{"v1.4.13", "1.4.13"},
+		{"agy 1.4.12", "1.4.12"},
+		{"antigravity version 1.4.12 (cl 1010700967)", "1.4.12"},
+		{"agy version v1.4.13", "1.4.13"},
+		{"invalid version output", ""},
+	}
+	for _, tc := range cases {
+		if got := parseVersionString(tc.input); got != tc.want {
+			t.Errorf("parseVersionString(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestProbeAntigravityCLIVersionFallback(t *testing.T) {
+	ResetProbedCLIVersionForTests()
+	defer ResetProbedCLIVersionForTests()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	v := ProbeAntigravityCLIVersion(ctx)
+	if v == "" {
+		t.Fatal("ProbeAntigravityCLIVersion() returned empty string")
 	}
 }

@@ -72,6 +72,13 @@ func TestAntigravityUserAgent(t *testing.T) {
 	}
 }
 
+func TestAntigravityCLIUserAgent(t *testing.T) {
+	ua := auth.AntigravityCLIUserAgent()
+	if !strings.HasPrefix(ua, "antigravity/cli/1.4.12 ") {
+		t.Fatalf("expected AntigravityCLIUserAgent to start with antigravity/cli/1.4.12, got %q", ua)
+	}
+}
+
 func TestExchangeAntigravityCode(t *testing.T) {
 	client := &http.Client{
 		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {

@@ -22,6 +22,7 @@ import (
 	xaiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/xai"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
@@ -494,6 +495,17 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 		}
 
 		now := time.Now()
+		clientUA := misc.AntigravityCLIUserAgent()
+		clientMode := "cli"
+		if cfg != nil {
+			if strings.TrimSpace(cfg.Antigravity.UserAgent) != "" {
+				clientUA = strings.TrimSpace(cfg.Antigravity.UserAgent)
+			} else if strings.EqualFold(cfg.Antigravity.ClientMode, "hub") {
+				clientUA = misc.AntigravityUserAgent()
+				clientMode = "hub"
+			}
+		}
+
 		metadata := map[string]any{
 			"type":          "antigravity",
 			"access_token":  tokenResp.AccessToken,
@@ -501,6 +513,8 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 			"expires_in":    tokenResp.ExpiresIn,
 			"timestamp":     now.UnixMilli(),
 			"expired":       now.Add(time.Duration(tokenResp.ExpiresIn) * time.Second).Format(time.RFC3339),
+			"user_agent":    clientUA,
+			"client_mode":   clientMode,
 		}
 		if email != "" {
 			metadata["email"] = email
@@ -537,6 +551,20 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 		fmt.Printf("Authentication successful! Token saved to %s\n", savedPath)
 		if projectID != "" {
 			fmt.Printf("Using GCP project: %s\n", util.HideAPIKey(projectID))
+			// Trigger lifecycle preflight warmup sequence matching native agy CLI
+			effectiveProxy := helps.EffectiveAntigravityProxyURL(ctx, cfg, record)
+			var discoveryClient *http.Client
+			if cfg != nil && cfg.Antigravity.UTLSEnabled() {
+				discoveryClient = &http.Client{
+					Transport: helps.NewAntigravityUTLSTransport(effectiveProxy, cfg.Antigravity.UTLSProfile(), cfg),
+				}
+			} else if effectiveProxy != "" {
+				discoveryClient = helps.NewProxyAwareHTTPClient(ctx, cfg, record, 0)
+			} else {
+				discoveryClient = util.SetProxy(&cfg.SDKConfig, &http.Client{})
+			}
+			_, _ = helps.EnsureAntigravityClientLifecycle(ctx, discoveryClient, record, accessToken, "")
+			helps.MaybeSendAntigravityShadowTelemetry(ctx, discoveryClient, record, accessToken)
 		}
 		fmt.Println("You can now use Antigravity services through this CLI")
 	}()
