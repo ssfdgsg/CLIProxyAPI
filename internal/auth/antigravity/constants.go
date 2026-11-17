@@ -1,10 +1,15 @@
 // Package antigravity provides OAuth2 authentication functionality for the Antigravity provider.
 package antigravity
 
-// OAuth client credentials and configuration
+// OAuth client configuration for Antigravity.
+//
+// Antigravity is a public/native client, identical to agy (the Antigravity
+// CLI): we use PKCE during the authorization-code flow and never send a
+// client_secret to the token endpoint. Distributing a shared secret in the
+// binary was misleading to Google's risk systems and made CPA look like a
+// foreign client using the same client_id.
 const (
 	ClientID     = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-	ClientSecret = "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"
 	CallbackPort = 51121
 )
 

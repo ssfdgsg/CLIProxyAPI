@@ -8,8 +8,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/antigravity"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 )
+
+// mustPKCE generates a fresh PKCE code pair for OAuth code-exchange tests and
+// fails the test if the system entropy source is unavailable.
+func mustPKCE(t *testing.T) *antigravity.PKCECodes {
+	t.Helper()
+	codes, err := antigravity.GeneratePKCECodes()
+	if err != nil {
+		t.Fatalf("GeneratePKCECodes: %v", err)
+	}
+	return codes
+}
 
 type mockRoundTripper func(req *http.Request) (*http.Response, error)
 
@@ -29,7 +41,7 @@ func TestAntigravityConstantsAndURLBuilder(t *testing.T) {
 
 	// Test with custom redirect URI
 	customURI := "https://admin.example.com/oauth/antigravity/callback"
-	authURL := auth.BuildAntigravityAuthURL("state-123", customURI)
+	authURL := auth.BuildAntigravityAuthURL("state-123", customURI, nil)
 	parsed, err := url.Parse(authURL)
 	if err != nil {
 		t.Fatalf("failed to parse auth URL: %v", err)
@@ -55,7 +67,7 @@ func TestAntigravityConstantsAndURLBuilder(t *testing.T) {
 	}
 
 	// Test with empty redirect URI (should fallback to default)
-	authURLDefault := auth.BuildAntigravityAuthURL("state-456", "")
+	authURLDefault := auth.BuildAntigravityAuthURL("state-456", "", nil)
 	parsedDefault, err := url.Parse(authURLDefault)
 	if err != nil {
 		t.Fatalf("failed to parse auth URL: %v", err)
@@ -102,7 +114,8 @@ func TestExchangeAntigravityCode(t *testing.T) {
 		}),
 	}
 
-	tokenResp, err := auth.ExchangeAntigravityCode(context.Background(), "auth-code-123", "http://localhost:51121/oauth-callback", client)
+	pkce := mustPKCE(t)
+	tokenResp, err := auth.ExchangeAntigravityCode(context.Background(), "auth-code-123", "http://localhost:51121/oauth-callback", client, pkce)
 	if err != nil {
 		t.Fatalf("ExchangeAntigravityCode error: %v", err)
 	}
@@ -224,7 +237,8 @@ func TestCompleteAntigravityOAuth(t *testing.T) {
 		}),
 	}
 
-	record, err := auth.CompleteAntigravityOAuth(context.Background(), "auth-code-xyz", "http://localhost:51121/oauth-callback", client)
+	pkceComplete := mustPKCE(t)
+	record, err := auth.CompleteAntigravityOAuth(context.Background(), "auth-code-xyz", "http://localhost:51121/oauth-callback", client, pkceComplete)
 	if err != nil {
 		t.Fatalf("CompleteAntigravityOAuth error: %v", err)
 	}
@@ -255,7 +269,7 @@ func TestExchangeAntigravityCodeDefaultRedirectAndErrors(t *testing.T) {
 		}),
 	}
 
-	_, err := auth.ExchangeAntigravityCode(context.Background(), "code-123", "", client)
+	_, err := auth.ExchangeAntigravityCode(context.Background(), "code-123", "", client, mustPKCE(t))
 	if err != nil {
 		t.Fatalf("ExchangeAntigravityCode error: %v", err)
 	}
@@ -274,7 +288,7 @@ func TestExchangeAntigravityCodeDefaultRedirectAndErrors(t *testing.T) {
 			}, nil
 		}),
 	}
-	_, err = auth.ExchangeAntigravityCode(context.Background(), "bad-code", "", errorClient)
+	_, err = auth.ExchangeAntigravityCode(context.Background(), "bad-code", "", errorClient, nil)
 	if err == nil {
 		t.Fatal("expected error on upstream 400 response")
 	}
@@ -294,7 +308,7 @@ func TestExchangeAntigravityCodeDefaultRedirectAndErrors(t *testing.T) {
 			}, nil
 		}),
 	}
-	_, err = auth.ExchangeAntigravityCode(canceledCtx, "code", "", contextAwareClient)
+	_, err = auth.ExchangeAntigravityCode(canceledCtx, "code", "", contextAwareClient, nil)
 	if err == nil {
 		t.Fatal("expected error with canceled context")
 	}

@@ -17,18 +17,34 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func TestBuildAuthURLIncludesAICodeScope(t *testing.T) {
-	parsedURL, err := url.Parse(NewAntigravityAuth(nil, nil).BuildAuthURL("state", "http://localhost/callback"))
+func TestBuildAuthURLIncludesPKCE(t *testing.T) {
+	pkce, errPKCE := GeneratePKCECodes()
+	if errPKCE != nil {
+		t.Fatalf("GeneratePKCECodes: %v", errPKCE)
+	}
+	if len(pkce.CodeVerifier) < 43 || len(pkce.CodeVerifier) > 128 {
+		t.Fatalf("unexpected verifier length: %d", len(pkce.CodeVerifier))
+	}
+	if len(pkce.CodeChallenge) == 0 {
+		t.Fatal("empty code challenge")
+	}
+
+	rawURL := NewAntigravityAuth(nil, nil).BuildAuthURL("state-123", "http://localhost/callback", pkce)
+	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		t.Fatalf("parse auth URL: %v", err)
 	}
 
-	for _, scope := range strings.Fields(parsedURL.Query().Get("scope")) {
-		if scope == "https://www.googleapis.com/auth/aicode" {
-			return
-		}
+	q := parsedURL.Query()
+	if got := q.Get("code_challenge"); got != pkce.CodeChallenge {
+		t.Fatalf("code_challenge = %q, want %q", got, pkce.CodeChallenge)
 	}
-	t.Fatalf("authorization URL scope does not include %q", "https://www.googleapis.com/auth/aicode")
+	if got := q.Get("code_challenge_method"); got != "S256" {
+		t.Fatalf("code_challenge_method = %q, want S256", got)
+	}
+	if got := q.Get("state"); got != "state-123" {
+		t.Fatalf("state = %q, want state-123", got)
+	}
 }
 
 func TestFetchProjectIDFromLoadCodeAssist(t *testing.T) {
